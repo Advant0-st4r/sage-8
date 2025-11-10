@@ -3,6 +3,7 @@ import { validateInput } from '../utils/validate.js';
 import { generateMarketingContent } from '../tools/marketing_gen.js';
 import { generateRequestId, createLogger } from '../utils/logging.js';
 import { rateLimit } from '../utils/rate_limiter.js';
+import { redisRateLimit } from '../utils/redis_rate_limiter.js';
 import { verifyHmacSignature } from '../utils/security.js';
 
 export default async function handler(req, res) {
@@ -26,10 +27,18 @@ export default async function handler(req, res) {
     // Optional: basic rate limiting per tenant
     try {
       const limiterKey = tenant_id || req.ip || req.socket?.remoteAddress || requestId;
-      const rl = rateLimit(limiterKey, { tokens: process.env.MAX_REQUESTS_PER_MINUTE ? Number(process.env.MAX_REQUESTS_PER_MINUTE) : 60 });
-      if (!rl.allowed) {
-        logger.info('rate_limited', { remaining: rl.remaining });
-        return res.status(429).json({ error: 'Rate limit exceeded', request_id: requestId });
+      if (process.env.REDIS_URL) {
+        const rl = await redisRateLimit(limiterKey, { tokens: process.env.MAX_REQUESTS_PER_MINUTE ? Number(process.env.MAX_REQUESTS_PER_MINUTE) : 60, windowSec: 60 }, process.env.REDIS_URL);
+        if (!rl.allowed) {
+          logger.info('rate_limited', { remaining: rl.remaining });
+          return res.status(429).json({ error: 'Rate limit exceeded', request_id: requestId });
+        }
+      } else {
+        const rl = rateLimit(limiterKey, { tokens: process.env.MAX_REQUESTS_PER_MINUTE ? Number(process.env.MAX_REQUESTS_PER_MINUTE) : 60 });
+        if (!rl.allowed) {
+          logger.info('rate_limited', { remaining: rl.remaining });
+          return res.status(429).json({ error: 'Rate limit exceeded', request_id: requestId });
+        }
       }
     } catch (e) {
       // rate limiter should never block the request path on errors
