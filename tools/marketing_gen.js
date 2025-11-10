@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { createChatCompletion } from '../utils/openai_client.js';
 import { parseJsonFromLLMOutput } from '../utils/parse_json.js';
 import { validateOutput } from '../utils/validate.js';
 
@@ -25,15 +25,14 @@ async function sleep(ms) {
 }
 
 export async function generateMarketingContent(tenantId, auditResults, patches, logger) {
-  // Lazily instantiate OpenAI client to avoid throwing at module import time
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  // Note: OpenAI client is created in the wrapper; just call through it.
   let lastError;
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const start = Date.now();
       
-      const response = await openai.chat.completions.create({
+      const response = await createChatCompletion({
         model: process.env.OPENAI_MODEL || 'gpt-4',
         messages: [
           { role: 'system', content: systemPrompt },
